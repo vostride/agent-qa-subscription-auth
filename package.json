@@ -1,0 +1,59 @@
+{
+  "name": "@vostride/agent-qa-subscription-auth",
+  "version": "0.1.1",
+  "private": false,
+  "type": "module",
+  "description": "Subscription LLM auth providers for agent-qa.",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "homepage": "https://github.com/vostride/agent-qa-subscription-auth#readme",
+  "bugs": {
+    "url": "https://github.com/vostride/agent-qa-subscription-auth/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vostride/agent-qa-subscription-auth.git"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE.md",
+    "NOTICE.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run src && node --test scripts/__tests__/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm typecheck && pnpm test && pnpm build",
+    "clean": "rm -rf dist .turbo .release",
+    "release:version": "node scripts/release/version.mjs",
+    "release:verify": "node scripts/release/verify.mjs",
+    "release:stage": "node scripts/release/stage-package.mjs",
+    "release:publish": "node scripts/release/publish.mjs",
+    "release:dry-run": "node scripts/release/dry-run.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "@vostride/agent-qa-core": ">=0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "~24.12.2",
+    "@vostride/agent-qa-core": "link:../agent-qa/packages/core",
+    "tsup": "~8.5.1",
+    "typescript": "~6.0.3",
+    "vitest": "~4.1.5"
+  }
+}

@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Release bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Release preflight
+        run: pnpm run release:verify -- --bump "${{ inputs.bump }}" --stage preflight
+
+      - name: Write release version
+        id: version
+        run: pnpm run release:version -- --bump "${{ inputs.bump }}" --write
+
+      - name: Test
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Stage package
+        run: pnpm run release:stage -- --target-version "${{ steps.version.outputs.version }}" --out .release/package
+
+      - name: Release postbuild verification
+        run: pnpm run release:verify -- --stage postbuild --target-version "${{ steps.version.outputs.version }}" --staged-dir .release/package
+
+      - name: Create release commit and tag
+        run: pnpm exec node scripts/release/git.mjs --commit-tag
+
+      - name: Push release commit and tag
+        run: git push origin HEAD:${{ github.ref_name }} --follow-tags
+
+      - name: Publish package
+        run: pnpm run release:publish -- --staged-dir .release/package
