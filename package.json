@@ -1,6 +1,6 @@
 {
   "name": "@vostride/agent-qa-subscription-auth",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": false,
   "type": "module",
   "description": "Subscription LLM auth providers for agent-qa.",
