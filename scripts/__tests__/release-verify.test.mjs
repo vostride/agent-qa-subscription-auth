@@ -31,6 +31,11 @@ test('parseVerifyArgs tolerates pnpm run -- separator', () => {
     targetVersion: '0.1.1',
     stage: 'preflight',
   })
+  assert.deepEqual(parseVerifyArgs(['--target-version', '0.1.1', '--stage', 'preflight', '--allow-existing-tag']), {
+    targetVersion: '0.1.1',
+    allowExistingTag: true,
+    stage: 'preflight',
+  })
   assert.deepEqual(parseVerifyArgs(['--stage', 'postbuild', '--target-version', '0.1.1', '--staged-dir', '.release/package']), {
     stage: 'postbuild',
     targetVersion: '0.1.1',
@@ -52,6 +57,22 @@ test('preflight accepts explicit target version from agent-qa release', async ()
   assert.deepEqual(calls, [
     ['git', '0.1.1'],
     ['npm', '@vostride/agent-qa-subscription-auth', '0.1.1'],
+  ])
+})
+
+test('preflight can recover an already-tagged target version while npm is still absent', async () => {
+  const calls = []
+  await runReleaseVerification({
+    stage: 'preflight',
+    targetVersion: '0.1.7',
+    allowExistingTag: true,
+    readPackage: () => ({ name: '@vostride/agent-qa-subscription-auth', version: '0.1.7' }),
+    checkGitTagAbsent: version => calls.push(['git', version]),
+    checkNpmVersionAbsent: (name, version) => calls.push(['npm', name, version]),
+  })
+
+  assert.deepEqual(calls, [
+    ['npm', '@vostride/agent-qa-subscription-auth', '0.1.7'],
   ])
 })
 

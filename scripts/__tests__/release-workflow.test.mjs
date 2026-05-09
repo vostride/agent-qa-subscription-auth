@@ -24,15 +24,18 @@ function assertBefore(text, before, after) {
   assert.ok(beforeIndex < afterIndex, `Expected "${before}" before "${after}"`)
 }
 
-test('release workflow is manual-only with patch/minor bump choices', () => {
+test('release workflow is manual-only with patch/minor bump choices and exact version dispatch', () => {
   const workflow = readWorkflow()
 
   assert.match(workflow, /workflow_dispatch:/)
+  assert.match(workflow, /run-name:\s*Release subscription auth/)
   assert.doesNotMatch(workflow, /^\s{2}(push|pull_request|release|schedule):/m)
   assert.match(workflow, /bump:/)
   assert.match(workflow, /type:\s*choice/)
+  assert.match(workflow, /default:\s*patch/)
   assert.match(workflow, /-\s+patch\b/)
   assert.match(workflow, /-\s+minor\b/)
+  assert.match(workflow, /target_version:/)
   assert.doesNotMatch(workflow, /-\s+major\b/)
 })
 
@@ -51,9 +54,20 @@ test('release workflow uses trusted publishing prerequisites without npm tokens'
 test('release workflow verifies, builds, stages, tags, pushes, and publishes in order', () => {
   const workflow = readWorkflow()
   const orderedCommands = [
+    'repository: vostride/agent-qa',
+    'path: agent-qa',
+    'path: agent-qa-subscription-auth',
+    'git rev-parse -q --verify "refs/tags/v$SUBSCRIPTION_AUTH_TARGET_VERSION"',
     'pnpm install --frozen-lockfile',
-    'pnpm run release:verify -- --bump "${{ inputs.bump }}" --stage preflight',
-    'pnpm run release:version -- --bump "${{ inputs.bump }}" --write',
+    'pnpm --filter @vostride/agent-qa-ids build',
+    'pnpm --filter @vostride/agent-qa-core build',
+    'working-directory: agent-qa-subscription-auth\n        run: pnpm install --frozen-lockfile',
+    'args=(--target-version "$SUBSCRIPTION_AUTH_TARGET_VERSION" --stage preflight)',
+    'args+=(--allow-existing-tag)',
+    'pnpm run release:verify -- "${args[@]}"',
+    'pnpm run release:verify -- --bump "$SUBSCRIPTION_AUTH_BUMP" --stage preflight',
+    'pnpm run release:version -- --target-version "$SUBSCRIPTION_AUTH_TARGET_VERSION" --write',
+    'pnpm run release:version -- --bump "$SUBSCRIPTION_AUTH_BUMP" --write',
     'pnpm test',
     'pnpm typecheck',
     'pnpm build',
@@ -65,6 +79,7 @@ test('release workflow verifies, builds, stages, tags, pushes, and publishes in 
   ]
 
   for (const command of orderedCommands) assertIncludes(workflow, command)
+  assert.match(workflow, /if:\s*\$\{\{ steps\.release-tag\.outputs\.exists != 'true' \}\}/)
   for (let index = 0; index < orderedCommands.length - 1; index += 1) {
     assertBefore(workflow, orderedCommands[index], orderedCommands[index + 1])
   }

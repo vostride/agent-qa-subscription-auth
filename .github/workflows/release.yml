@@ -1,15 +1,21 @@
 name: Release
+run-name: Release subscription auth ${{ inputs.target_version || inputs.bump }}
 
 on:
   workflow_dispatch:
     inputs:
       bump:
         description: Release bump
-        required: true
+        required: false
         type: choice
+        default: patch
         options:
           - patch
           - minor
+      target_version:
+        description: Exact version to publish when dispatched from agent-qa
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -25,9 +31,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout agent-qa for linked core dependency
         uses: actions/checkout@v6
         with:
+          repository: vostride/agent-qa
+          path: agent-qa
+          ref: ${{ inputs.target_version != '' && format('v{0}', inputs.target_version) || 'main' }}
+
+      - name: Checkout subscription auth
+        uses: actions/checkout@v6
+        with:
+          path: agent-qa-subscription-auth
           fetch-depth: 0
 
       - name: Setup Node
@@ -39,36 +53,94 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Check existing release tag
+        id: release-tag
+        working-directory: agent-qa-subscription-auth
+        env:
+          SUBSCRIPTION_AUTH_TARGET_VERSION: ${{ inputs.target_version }}
+        run: |
+          if [ -n "$SUBSCRIPTION_AUTH_TARGET_VERSION" ] && git rev-parse -q --verify "refs/tags/v$SUBSCRIPTION_AUTH_TARGET_VERSION" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install agent-qa dependencies
+        working-directory: agent-qa
+        run: pnpm install --frozen-lockfile
+
+      - name: Build linked ID helpers
+        working-directory: agent-qa
+        run: pnpm --filter @vostride/agent-qa-ids build
+
+      - name: Build linked core dependency
+        working-directory: agent-qa
+        run: pnpm --filter @vostride/agent-qa-core build
+
       - name: Install dependencies
+        working-directory: agent-qa-subscription-auth
         run: pnpm install --frozen-lockfile
 
       - name: Release preflight
-        run: pnpm run release:verify -- --bump "${{ inputs.bump }}" --stage preflight
+        working-directory: agent-qa-subscription-auth
+        env:
+          SUBSCRIPTION_AUTH_TARGET_VERSION: ${{ inputs.target_version }}
+          SUBSCRIPTION_AUTH_BUMP: ${{ inputs.bump || 'patch' }}
+          SUBSCRIPTION_AUTH_TAG_EXISTS: ${{ steps.release-tag.outputs.exists }}
+        run: |
+          if [ -n "$SUBSCRIPTION_AUTH_TARGET_VERSION" ]; then
+            args=(--target-version "$SUBSCRIPTION_AUTH_TARGET_VERSION" --stage preflight)
+            if [ "$SUBSCRIPTION_AUTH_TAG_EXISTS" = "true" ]; then
+              args+=(--allow-existing-tag)
+            fi
+            pnpm run release:verify -- "${args[@]}"
+          else
+            pnpm run release:verify -- --bump "$SUBSCRIPTION_AUTH_BUMP" --stage preflight
+          fi
 
       - name: Write release version
         id: version
-        run: pnpm run release:version -- --bump "${{ inputs.bump }}" --write
+        working-directory: agent-qa-subscription-auth
+        env:
+          SUBSCRIPTION_AUTH_TARGET_VERSION: ${{ inputs.target_version }}
+          SUBSCRIPTION_AUTH_BUMP: ${{ inputs.bump || 'patch' }}
+        run: |
+          if [ -n "$SUBSCRIPTION_AUTH_TARGET_VERSION" ]; then
+            pnpm run release:version -- --target-version "$SUBSCRIPTION_AUTH_TARGET_VERSION" --write
+          else
+            pnpm run release:version -- --bump "$SUBSCRIPTION_AUTH_BUMP" --write
+          fi
 
       - name: Test
+        working-directory: agent-qa-subscription-auth
         run: pnpm test
 
       - name: Typecheck
+        working-directory: agent-qa-subscription-auth
         run: pnpm typecheck
 
       - name: Build
+        working-directory: agent-qa-subscription-auth
         run: pnpm build
 
       - name: Stage package
+        working-directory: agent-qa-subscription-auth
         run: pnpm run release:stage -- --target-version "${{ steps.version.outputs.version }}" --out .release/package
 
       - name: Release postbuild verification
+        working-directory: agent-qa-subscription-auth
         run: pnpm run release:verify -- --stage postbuild --target-version "${{ steps.version.outputs.version }}" --staged-dir .release/package
 
       - name: Create release commit and tag
+        if: ${{ steps.release-tag.outputs.exists != 'true' }}
+        working-directory: agent-qa-subscription-auth
         run: pnpm exec node scripts/release/git.mjs --commit-tag
 
       - name: Push release commit and tag
+        if: ${{ steps.release-tag.outputs.exists != 'true' }}
+        working-directory: agent-qa-subscription-auth
         run: git push origin HEAD:${{ github.ref_name }} --follow-tags
 
       - name: Publish package
+        working-directory: agent-qa-subscription-auth
         run: pnpm run release:publish -- --staged-dir .release/package

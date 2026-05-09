@@ -62,7 +62,9 @@ export async function runReleaseVerification(options = {}) {
     const targetVersion = options.targetVersion
       ? assertAllowedTargetVersion(options.targetVersion)
       : computeTargetVersion(pkg.version, bump)
-    await (options.checkGitTagAbsent ?? defaultCheckGitTagAbsent)(targetVersion, options)
+    if (!options.allowExistingTag) {
+      await (options.checkGitTagAbsent ?? defaultCheckGitTagAbsent)(targetVersion, options)
+    }
     await (options.checkNpmVersionAbsent ?? defaultCheckNpmVersionAbsent)(pkg.name, targetVersion, options)
     return { targetVersion }
   }
@@ -96,6 +98,7 @@ export function parseVerifyArgs(argv = []) {
   let stage
   let targetVersion
   let stagedDir
+  let allowExistingTag = false
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === '--bump') {
@@ -110,6 +113,8 @@ export function parseVerifyArgs(argv = []) {
     } else if (arg === '--staged-dir') {
       stagedDir = args[index + 1]
       index += 1
+    } else if (arg === '--allow-existing-tag') {
+      allowExistingTag = true
     } else {
       throw new Error(`invalid args: ${args.join(' ')}`)
     }
@@ -119,7 +124,8 @@ export function parseVerifyArgs(argv = []) {
     if (!bump && !targetVersion) throw new Error('missing --bump or --target-version')
     if (bump) assertAllowedBump(bump)
     if (targetVersion) assertAllowedTargetVersion(targetVersion)
-    return { ...(bump ? { bump } : {}), ...(targetVersion ? { targetVersion } : {}), stage }
+    if (allowExistingTag && !targetVersion) throw new Error('--allow-existing-tag requires --target-version')
+    return { ...(bump ? { bump } : {}), ...(targetVersion ? { targetVersion } : {}), ...(allowExistingTag ? { allowExistingTag } : {}), stage }
   }
   if (stage === 'postbuild') {
     if (!targetVersion) throw new Error('missing --target-version')
