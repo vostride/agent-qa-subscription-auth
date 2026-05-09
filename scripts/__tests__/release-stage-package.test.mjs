@@ -41,13 +41,15 @@ test('sanitizes publish manifest and rejects local dependency ranges', () => {
   const sanitized = sanitizePackageManifest({
     name: '@vostride/agent-qa-subscription-auth',
     version: '0.1.0',
+    main: './dist/index.js',
+    types: './dist/index.d.ts',
     devDependencies: { '@vostride/agent-qa-core': 'link:../agent-qa/packages/core' },
     peerDependencies: { '@vostride/agent-qa-core': '>=0.1.0' },
   }, '0.1.1')
 
   assert.equal(sanitized.version, '0.1.1')
-  assert.equal(sanitized.main, undefined)
-  assert.equal(sanitized.types, undefined)
+  assert.equal(sanitized.main, './dist/index.js')
+  assert.equal(sanitized.types, './dist/index.d.ts')
   assert.equal(sanitized.peerDependencies['@vostride/agent-qa-core'], '>=0.1.0')
   assert.equal('devDependencies' in sanitized, false)
   assert.throws(() => sanitizePackageManifest({ dependencies: { bad: 'workspace:*' } }, '0.1.1'), /unsafe local dependency range/)
