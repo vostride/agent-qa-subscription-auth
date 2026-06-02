@@ -269,6 +269,35 @@ export function createAnthropicAuthFetch(
     }
 
     if (response.body) {
+      // Non-streaming responses (generateText / `stream: false`) arrive as a
+      // single JSON body. The SSE transform below only rewrites `data:` lines,
+      // so without this branch tool_use names stay prefixed (e.g. `mcp_search`
+      // never maps back to `search`) and the caller fails with
+      // "Unknown tool: mcp_search". Rewrite the parsed body directly instead.
+      const contentType = response.headers.get('content-type') ?? ''
+      if (contentType.includes('application/json')) {
+        const rawText = await response.text()
+        const headers = new Headers(response.headers)
+        // Body length/encoding change after rewriting; drop stale framing headers.
+        headers.delete('content-length')
+        headers.delete('content-encoding')
+        try {
+          const json = JSON.parse(rawText)
+          rewriteToolUseNames(json)
+          return new Response(JSON.stringify(json), {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          })
+        } catch {
+          return new Response(rawText, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          })
+        }
+      }
+
       const stream = response.body.pipeThrough(createAnthropicToolNameTransform())
 
       return new Response(stream, {
