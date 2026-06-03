@@ -203,7 +203,7 @@ describe('createAnthropicAuthFetch', () => {
     const payload = {
       type: 'message',
       content: [
-        { type: 'text', text: 'ok' },
+        { type: 'text', text: '{"name":"mcp_literal"}' },
         { type: 'tool_use', name: 'mcp_lookup' },
         { type: 'tool_use', name: 'search' },
       ],
@@ -211,7 +211,11 @@ describe('createAnthropicAuthFetch', () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(payload), {
         status: 200,
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'content-length': '123',
+          'content-encoding': 'gzip',
+        },
       }),
     )
     const authFetch = createAnthropicAuthFetch(
@@ -228,8 +232,11 @@ describe('createAnthropicAuthFetch', () => {
       body: JSON.stringify({ messages: [] }),
     })
 
-    const body = (await response.json()) as { content: { name?: string }[] }
+    const body = (await response.json()) as { content: { name?: string, text?: string }[] }
 
+    expect(body.content[0].text).toBe('{"name":"mcp_literal"}')
     expect(body.content.map((block) => block.name)).toEqual([undefined, 'lookup', 'search'])
+    expect(response.headers.has('content-length')).toBe(false)
+    expect(response.headers.has('content-encoding')).toBe(false)
   })
 })
