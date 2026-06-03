@@ -198,4 +198,45 @@ describe('createAnthropicAuthFetch', () => {
     expect(text).toContain('"name":"lookup"')
     expect(text).toContain('mcp_literal')
   })
+
+  it('strips the tool-name prefix from non-streaming JSON responses', async () => {
+    const payload = {
+      type: 'message',
+      content: [
+        { type: 'text', text: '{"name":"mcp_literal"}' },
+        { type: 'tool_use', name: 'mcp_lookup' },
+        { type: 'tool_use', name: 'search' },
+      ],
+    }
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'content-length': '123',
+          'content-encoding': 'gzip',
+        },
+      }),
+    )
+    const authFetch = createAnthropicAuthFetch(
+      async () => ({
+        access: 'access-token',
+        refresh: 'refresh-token',
+        expires: Date.now() + 3600000,
+      }),
+      vi.fn(),
+    )
+
+    const response = await authFetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ messages: [] }),
+    })
+
+    const body = (await response.json()) as { content: { name?: string, text?: string }[] }
+
+    expect(body.content[0].text).toBe('{"name":"mcp_literal"}')
+    expect(body.content.map((block) => block.name)).toEqual([undefined, 'lookup', 'search'])
+    expect(response.headers.has('content-length')).toBe(false)
+    expect(response.headers.has('content-encoding')).toBe(false)
+  })
 })
