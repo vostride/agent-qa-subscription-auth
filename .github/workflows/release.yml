@@ -69,13 +69,9 @@ jobs:
         working-directory: agent-qa
         run: pnpm install --frozen-lockfile
 
-      - name: Build linked ID helpers
+      - name: Build linked core and its agent-qa dependencies
         working-directory: agent-qa
-        run: pnpm --filter @vostride/agent-qa-ids build
-
-      - name: Build linked core dependency
-        working-directory: agent-qa
-        run: pnpm --filter @vostride/agent-qa-core build
+        run: pnpm --filter "@vostride/agent-qa-core..." build
 
       - name: Install dependencies
         working-directory: agent-qa-subscription-auth
