@@ -16,6 +16,7 @@
   "engines": {
     "node": ">=24"
   },
+  "packageManager": "pnpm@12.16.1",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -30,8 +31,8 @@
     "NOTICE.md"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
+    "build": "tsdown",
+    "dev": "tsdown --watch",
     "test": "vitest run src && node --test scripts/__tests__/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "prepack": "pnpm typecheck && pnpm test && pnpm build",
@@ -50,10 +51,12 @@
     "@vostride/agent-qa-core": ">=0.1.0"
   },
   "devDependencies": {
-    "@types/node": "~24.12.2",
+    "@arethetypeswrong/core": "~0.18.5",
+    "@types/node": "~24.19.2",
     "@vostride/agent-qa-core": "link:../agent-qa/packages/core",
-    "tsup": "~8.5.1",
-    "typescript": "~6.0.3",
-    "vitest": "~4.1.5"
+    "publint": "~0.3.25",
+    "tsdown": "~0.23.4",
+    "typescript": "~7.0.2",
+    "vitest": "~5.0.5"
   }
 }
