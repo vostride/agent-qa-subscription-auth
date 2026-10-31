@@ -44,14 +44,16 @@ jobs:
           path: agent-qa-subscription-auth
           fetch-depth: 0
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: agent-qa-subscription-auth/package.json
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version-file: agent-qa-subscription-auth/.nvmrc
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Enable Corepack
-        run: corepack enable
 
       - name: Check existing release tag
         id: release-tag

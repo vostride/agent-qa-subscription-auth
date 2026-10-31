@@ -39,16 +39,31 @@ test('release workflow is manual-only with patch/minor bump choices and exact ve
   assert.doesNotMatch(workflow, /-\s+major\b/)
 })
 
-test('release workflow uses trusted publishing prerequisites without npm tokens', () => {
+test('release workflow uses trusted publishing without npm tokens and takes pnpm from packageManager and Node from .nvmrc', () => {
   const workflow = readWorkflow()
 
   assert.match(workflow, /permissions:/)
   assert.match(workflow, /contents:\s*write/)
   assert.match(workflow, /id-token:\s*write/)
   assert.match(workflow, /runs-on:\s*ubuntu-latest/)
-  assertIncludes(workflow, "node-version: '24'")
   assertIncludes(workflow, "registry-url: 'https://registry.npmjs.org'")
   assert.doesNotMatch(workflow, /NPM_TOKEN/)
+
+  const pnpmSetup = workflow.split('\n').filter((line) => line.includes('pnpm/action-setup@'))
+  assert.equal(pnpmSetup.length, 1)
+  assert.match(pnpmSetup[0], /uses: pnpm\/action-setup@[0-9a-f]{40} # v\d+\.\d+\.\d+$/)
+  assertIncludes(workflow, 'package_json_file: agent-qa-subscription-auth/package.json')
+  assertIncludes(workflow, 'node-version-file: agent-qa-subscription-auth/.nvmrc')
+  assertBefore(workflow, 'pnpm/action-setup@', 'actions/setup-node@')
+  assertBefore(workflow, 'path: agent-qa-subscription-auth', 'pnpm/action-setup@')
+  assert.doesNotMatch(workflow, /node-version:/)
+  assert.doesNotMatch(workflow, /corepack/i)
+})
+
+test('.nvmrc holds one exact Node version', () => {
+  const nvmrc = readFileSync(join(rootDir, '.nvmrc'), 'utf8')
+
+  assert.match(nvmrc, /^\d+\.\d+\.\d+\n$/)
 })
 
 test('release workflow verifies, builds, stages, tags, pushes, and publishes in order', () => {
