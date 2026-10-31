@@ -73,6 +73,25 @@ test('stages package files and validates required publish contents', async () =>
   }
 })
 
+test('staged dist may name only source maps it ships', async () => {
+  const rootDir = await fixtureRoot()
+  try {
+    await writeFile(join(rootDir, 'dist/index.js'), 'export default 1\n//# sourceMappingURL=index.js.map')
+    await writeFile(join(rootDir, 'dist/index.js.map'), '{}')
+    const stagedDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+    validateStagedPackage({ stagedDir, targetVersion: '0.1.1' })
+
+    await writeFile(join(rootDir, 'dist/index.d.ts'), 'export {}\n//# sourceMappingURL=index.d.ts.map')
+    const danglingDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+    assert.throws(
+      () => validateStagedPackage({ stagedDir: danglingDir, targetVersion: '0.1.1' }),
+      /staged dist\/index\.d\.ts points at source map index\.d\.ts\.map, which is not emitted/,
+    )
+  } finally {
+    await rm(rootDir, { recursive: true, force: true })
+  }
+})
+
 test('parseStageArgs tolerates pnpm run -- separator', () => {
   assert.deepEqual(parseStageArgs(['--', '--target-version', '0.1.1', '--out', '.release/package']), {
     targetVersion: '0.1.1',

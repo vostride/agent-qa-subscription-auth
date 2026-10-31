@@ -1,6 +1,6 @@
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { stripArgSeparator } from './version.mjs'
 
 const dependencyBlocks = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
@@ -13,6 +13,19 @@ function assertNoLocalRanges(pkg) {
     for (const [name, range] of Object.entries(block)) {
       if (typeof range === 'string' && /^(link:|file:|workspace:)/.test(range)) {
         throw new Error(`unsafe local dependency range in staged manifest: ${blockName}.${name}=${range}`)
+      }
+    }
+  }
+}
+
+function assertNoDanglingSourceMaps(stagedDir) {
+  const distDir = join(stagedDir, 'dist')
+  for (const entry of readdirSync(distDir, { recursive: true })) {
+    if (!/\.(?:[cm]?js|d\.[cm]?ts)$/.test(entry)) continue
+    const path = join(distDir, entry)
+    for (const [, url] of readFileSync(path, 'utf8').matchAll(/^\/\/[#@] sourceMappingURL=(\S+)/gm)) {
+      if (!url.startsWith('data:') && !existsSync(join(dirname(path), url))) {
+        throw new Error(`staged dist/${entry} points at source map ${url}, which is not emitted`)
       }
     }
   }
@@ -91,6 +104,7 @@ export function validateStagedPackage(options = {}) {
   for (const file of ['README.md', 'LICENSE.md', 'NOTICE.md', 'dist/index.js', 'package.json']) {
     if (!existsSync(join(stagedDir, file))) throw new Error(`staged package must include ${file}`)
   }
+  assertNoDanglingSourceMaps(stagedDir)
   return { dir: stagedDir, pkg }
 }
 
