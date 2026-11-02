@@ -280,7 +280,7 @@ export function createCodexAuthFetch(
 
     const response = await authFetch(input, { ...init, body })
     if (forceStream && response.ok && response.body) {
-      return bufferCodexSSEResponse(response)
+      return bufferCodexSSEResponse(response, init?.signal)
     }
     return response
   }
@@ -298,7 +298,10 @@ function isCodexRequestUrl(url: string): boolean {
     || url.includes('chatgpt.com/backend-api/codex')
 }
 
-async function bufferCodexSSEResponse(response: Response): Promise<Response> {
+async function bufferCodexSSEResponse(
+  response: Response,
+  signal: AbortSignal | null | undefined,
+): Promise<Response> {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -309,17 +312,15 @@ async function bufferCodexSSEResponse(response: Response): Promise<Response> {
   const functionCallArgumentDeltas = new Map<number, string>()
   const customToolInputDeltas = new Map<number, string>()
 
-  const overallTimeout = setTimeout(() => {
-    try { reader.cancel() } catch { /* ignore */ }
-  }, 120_000)
+  // No idle timeout: reasoning can stay silent for minutes; the caller's signal bounds the call.
+  const cancelRead = () => {
+    reader.cancel(signal?.reason).catch(() => {})
+  }
+  signal?.addEventListener('abort', cancelRead, { once: true })
 
   try {
-    while (true) {
-      const chunkPromise = reader.read()
-      const timeoutPromise = new Promise<{ done: true; value: undefined }>((resolve) =>
-        setTimeout(() => resolve({ done: true, value: undefined }), 30_000)
-      )
-      const { done, value } = await Promise.race([chunkPromise, timeoutPromise])
+    while (!completedResponse && !signal?.aborted) {
+      const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
 
@@ -329,60 +330,71 @@ async function bufferCodexSSEResponse(response: Response): Promise<Response> {
         if (!line.startsWith('data: ')) continue
         const data = line.slice(6).trim()
         if (data === '[DONE]') continue
-        try {
-          const event = JSON.parse(data)
-          if (!isJSONRecord(event) || typeof event.type !== 'string') continue
+        const event = safeParseJSON(data)
+        if (!isJSONRecord(event) || typeof event.type !== 'string') continue
 
-          if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
-            outputText += event.delta
-          }
+        if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
+          outputText += event.delta
+        }
 
-          if (event.type === 'response.output_item.added'
-            && typeof event.output_index === 'number'
-            && isJSONRecord(event.item)
-          ) {
-            pendingOutputItems.set(event.output_index, { ...event.item })
-          }
+        if (event.type === 'response.output_item.added'
+          && typeof event.output_index === 'number'
+          && isJSONRecord(event.item)
+        ) {
+          pendingOutputItems.set(event.output_index, { ...event.item })
+        }
 
-          if (event.type === 'response.function_call_arguments.delta'
-            && typeof event.output_index === 'number'
-            && typeof event.delta === 'string'
-          ) {
-            const prev = functionCallArgumentDeltas.get(event.output_index) ?? ''
-            functionCallArgumentDeltas.set(event.output_index, prev + event.delta)
-          }
+        if (event.type === 'response.function_call_arguments.delta'
+          && typeof event.output_index === 'number'
+          && typeof event.delta === 'string'
+        ) {
+          const prev = functionCallArgumentDeltas.get(event.output_index) ?? ''
+          functionCallArgumentDeltas.set(event.output_index, prev + event.delta)
+        }
 
-          if (event.type === 'response.custom_tool_call_input.delta'
-            && typeof event.output_index === 'number'
-            && typeof event.delta === 'string'
-          ) {
-            const prev = customToolInputDeltas.get(event.output_index) ?? ''
-            customToolInputDeltas.set(event.output_index, prev + event.delta)
-          }
+        if (event.type === 'response.custom_tool_call_input.delta'
+          && typeof event.output_index === 'number'
+          && typeof event.delta === 'string'
+        ) {
+          const prev = customToolInputDeltas.get(event.output_index) ?? ''
+          customToolInputDeltas.set(event.output_index, prev + event.delta)
+        }
 
-          if (event.type === 'response.output_item.done'
-            && typeof event.output_index === 'number'
-            && isJSONRecord(event.item)
-          ) {
-            completedOutputItems.set(
-              event.output_index,
-              hydrateOutputItem(event.item, event.output_index, functionCallArgumentDeltas, customToolInputDeltas),
-            )
-          }
+        if (event.type === 'response.output_item.done'
+          && typeof event.output_index === 'number'
+          && isJSONRecord(event.item)
+        ) {
+          completedOutputItems.set(
+            event.output_index,
+            hydrateOutputItem(event.item, event.output_index, functionCallArgumentDeltas, customToolInputDeltas),
+          )
+        }
 
-          if ((event.type === 'response.completed' || event.type === 'response.incomplete')
-            && isJSONRecord(event.response)
-          ) {
-            completedResponse = event.response
-          }
-        } catch {
-          // Ignore malformed SSE payloads.
+        if ((event.type === 'response.completed' || event.type === 'response.incomplete')
+          && isJSONRecord(event.response)
+        ) {
+          completedResponse = event.response
+        }
+
+        if (event.type === 'response.failed') {
+          throw codexStreamError(
+            'Codex response failed',
+            isJSONRecord(event.response) ? event.response.error : undefined,
+          )
+        }
+
+        if (event.type === 'error') {
+          throw codexStreamError('Codex stream error', isJSONRecord(event.error) ? event.error : event)
         }
       }
     }
   } finally {
-    clearTimeout(overallTimeout)
+    signal?.removeEventListener('abort', cancelRead)
+    reader.cancel().catch(() => {})
   }
+
+  signal?.throwIfAborted()
+  if (!completedResponse) throw new Error('Codex stream closed before the response completed')
 
   for (const [outputIndex, item] of pendingOutputItems) {
     if (!completedOutputItems.has(outputIndex)) {
@@ -398,17 +410,20 @@ async function bufferCodexSSEResponse(response: Response): Promise<Response> {
     .map(([, item]) => item)
 
   const body = JSON.stringify(
-    ensureResponseMetadata(
-      completedResponse
-        ? mergeBufferedOutputItems(completedResponse, bufferedOutput, outputText)
-        : createBufferedResponse(bufferedOutput, outputText),
-    ),
+    ensureResponseMetadata(mergeBufferedOutputItems(completedResponse, bufferedOutput, outputText)),
   )
 
   return new Response(body, {
     status: 200,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function codexStreamError(prefix: string, error: unknown): Error {
+  if (!isJSONRecord(error)) return new Error(prefix)
+  const code = typeof error.code === 'string' ? ` (${error.code})` : ''
+  const message = typeof error.message === 'string' ? `: ${error.message}` : ''
+  return new Error(`${prefix}${code}${message}`)
 }
 
 function isJSONRecord(value: unknown): value is JSONRecord {
@@ -462,14 +477,6 @@ function mergeBufferedOutputItems(
   }
 
   return { ...response, output: mergedOutput }
-}
-
-function createBufferedResponse(bufferedOutput: JSONRecord[], outputText: string): JSONRecord {
-  return {
-    id: 'codex-buffered',
-    output: bufferedOutput.length > 0 ? bufferedOutput : [buildTextOutput(outputText)],
-    status: 'completed',
-  }
 }
 
 function ensureResponseMetadata(response: JSONRecord): JSONRecord {

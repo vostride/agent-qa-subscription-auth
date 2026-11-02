@@ -11,11 +11,26 @@ import {
 } from './index.js'
 
 const originalFetch = globalThis.fetch
+const encoder = new TextEncoder()
 
 afterEach(() => {
   globalThis.fetch = originalFetch
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
+
+function sse(event: Record<string, unknown>): Uint8Array<ArrayBuffer> {
+  return encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+}
+
+function sseResponse(
+  start: (stream: ReadableStreamDefaultController<Uint8Array<ArrayBuffer>>) => void,
+): Response {
+  return new Response(new ReadableStream({ start }), {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  })
+}
 
 describe('createSubscriptionAuthPlugin', () => {
   it('registers OpenAI and Anthropic subscription providers', () => {
@@ -39,8 +54,30 @@ describe('createSubscriptionAuthPlugin', () => {
 })
 
 describe('createCodexAuthFetch', () => {
+  const created = { type: 'response.created', response: { id: 'resp_1', status: 'in_progress', output: [] } }
+  const completed = { type: 'response.completed', response: { id: 'resp_1', status: 'completed', output: [] } }
+
+  function requestCodexResponse(signal?: AbortSignal): Promise<Response> {
+    const authFetch = createCodexAuthFetch(
+      async () => ({
+        access: 'access-token',
+        refresh: 'refresh-token',
+        expires: Date.now() + 3600000,
+      }),
+      vi.fn(),
+    )
+    return authFetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'gpt-6.1-sol', input: [] }),
+      signal,
+    })
+  }
+
   it('routes Responses API requests through the Codex backend and relaxes strict schemas', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }))
+    globalThis.fetch = vi.fn().mockResolvedValue(sseResponse((stream) => {
+      stream.enqueue(sse(completed))
+      stream.close()
+    }))
     const authFetch = createCodexAuthFetch(
       async () => ({
         access: 'access-token',
@@ -68,6 +105,105 @@ describe('createCodexAuthFetch', () => {
     expect(body.text.format.strict).toBe(false)
     expect(headers.get('Authorization')).toBe('Bearer access-token')
     expect(headers.get('ChatGPT-Account-Id')).toBe('account-1')
+  })
+
+  it('waits through more than 30 seconds of stream silence for the completed response', async () => {
+    vi.useFakeTimers()
+    const message = {
+      type: 'message',
+      id: 'msg_1',
+      role: 'assistant',
+      status: 'completed',
+      content: [{ type: 'output_text', text: 'The notebook costs $18.00.', annotations: [] }],
+    }
+    globalThis.fetch = vi.fn().mockResolvedValue(sseResponse((stream) => {
+      stream.enqueue(sse(created))
+      setTimeout(() => {
+        stream.enqueue(sse({
+          type: 'response.output_item.added',
+          output_index: 0,
+          item: { ...message, status: 'in_progress', content: [] },
+        }))
+        stream.enqueue(sse({
+          type: 'response.output_text.delta',
+          output_index: 0,
+          content_index: 0,
+          delta: 'The notebook costs $18.00.',
+        }))
+        stream.enqueue(sse({ type: 'response.output_item.done', output_index: 0, item: message }))
+        stream.enqueue(sse(completed))
+        stream.close()
+      }, 45_000)
+    }))
+
+    const pending = requestCodexResponse()
+    await vi.advanceTimersByTimeAsync(45_000)
+    const response = await pending
+
+    expect(await response.json()).toMatchObject({
+      id: 'resp_1',
+      status: 'completed',
+      output: [message],
+    })
+  })
+
+  it('rejects when the stream closes before the response completes', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(sseResponse((stream) => {
+      stream.enqueue(sse(created))
+      stream.enqueue(sse({
+        type: 'response.output_text.delta',
+        output_index: 0,
+        content_index: 0,
+        delta: 'The note',
+      }))
+      stream.close()
+    }))
+
+    await expect(requestCodexResponse()).rejects.toThrow(
+      'Codex stream closed before the response completed',
+    )
+  })
+
+  it('rejects with the abort reason when the caller aborts a silent stream', async () => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
+    globalThis.fetch = vi.fn().mockResolvedValue(sseResponse((stream) => {
+      stream.enqueue(sse(created))
+    }))
+
+    const pending = requestCodexResponse(controller.signal)
+    await vi.advanceTimersByTimeAsync(60_000)
+    controller.abort()
+
+    await expect(pending).rejects.toBe(controller.signal.reason)
+  })
+
+  it.each([
+    [
+      'response.failed',
+      {
+        type: 'response.failed',
+        response: {
+          id: 'resp_1',
+          status: 'failed',
+          error: { code: 'server_error', message: 'The model failed to generate a response.' },
+        },
+      },
+      'Codex response failed (server_error): The model failed to generate a response.',
+    ],
+    [
+      'error',
+      { type: 'error', code: 'rate_limit_exceeded', message: 'Rate limit reached.', param: null },
+      'Codex stream error (rate_limit_exceeded): Rate limit reached.',
+    ],
+  ])('rejects with the backend message on the %s event', async (_type, event, message) => {
+    globalThis.fetch = vi.fn().mockResolvedValue(sseResponse((stream) => {
+      stream.enqueue(sse(created))
+      stream.enqueue(sse(event))
+      stream.close()
+    }))
+
+    await expect(requestCodexResponse()).rejects.toThrow(message)
   })
 })
 
