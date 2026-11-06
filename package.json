@@ -4,6 +4,9 @@
   "private": false,
   "type": "module",
   "description": "Subscription LLM auth providers for agent-qa.",
+  "keywords": [
+    "agent-qa-plugin"
+  ],
   "license": "SEE LICENSE IN LICENSE.md",
   "homepage": "https://github.com/vostride/agent-qa-subscription-auth#readme",
   "bugs": {
@@ -30,6 +33,13 @@
     "LICENSE.md",
     "NOTICE.md"
   ],
+  "agent-qa": {
+    "plugin": {
+      "kind": "model-auth",
+      "runs": "in-process",
+      "entry": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
