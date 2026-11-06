@@ -49,6 +49,7 @@ export function sanitizePackageManifest(pkg, targetVersion) {
     'homepage',
     'bugs',
     'repository',
+    'agent-qa',
   ]
   const sanitized = {}
   for (const key of allowed) {
@@ -99,6 +100,10 @@ export function validateStagedPackage(options = {}) {
   if (pkg.types !== './dist/index.d.ts') throw new Error('staged package types must be ./dist/index.d.ts')
   if (pkg.peerDependencies?.['@vostride/agent-qa-core'] !== '>=0.1.0') {
     throw new Error('staged package must declare @vostride/agent-qa-core >=0.1.0 peer dependency')
+  }
+  const plugin = pkg['agent-qa']?.plugin
+  if (plugin?.kind !== 'model-auth' || plugin.runs !== 'in-process' || plugin.entry !== './dist/index.js') {
+    throw new Error('staged package must declare the agent-qa model-auth plugin manifest')
   }
   assertNoLocalRanges(pkg)
   for (const file of ['README.md', 'LICENSE.md', 'NOTICE.md', 'dist/index.js', 'package.json']) {

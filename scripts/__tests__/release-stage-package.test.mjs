@@ -11,6 +11,8 @@ import {
   validateStagedPackage,
 } from '../release/stage-package.mjs'
 
+const pluginManifest = { plugin: { kind: 'model-auth', runs: 'in-process', entry: './dist/index.js' } }
+
 async function fixtureRoot(overrides = {}) {
   const rootDir = await mkdtemp(join(tmpdir(), 'subscription-auth-stage-'))
   await mkdir(join(rootDir, 'dist'), { recursive: true })
@@ -31,6 +33,7 @@ async function fixtureRoot(overrides = {}) {
     devDependencies: { '@vostride/agent-qa-core': 'link:../agent-qa/packages/core' },
     publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
     license: 'SEE LICENSE IN LICENSE.md',
+    'agent-qa': pluginManifest,
     ...overrides,
   }
   await writeFile(join(rootDir, 'package.json'), JSON.stringify(manifest, null, 2))
@@ -45,12 +48,14 @@ test('sanitizes publish manifest and rejects local dependency ranges', () => {
     types: './dist/index.d.ts',
     devDependencies: { '@vostride/agent-qa-core': 'link:../agent-qa/packages/core' },
     peerDependencies: { '@vostride/agent-qa-core': '>=0.1.0' },
+    'agent-qa': pluginManifest,
   }, '0.1.1')
 
   assert.equal(sanitized.version, '0.1.1')
   assert.equal(sanitized.main, './dist/index.js')
   assert.equal(sanitized.types, './dist/index.d.ts')
   assert.equal(sanitized.peerDependencies['@vostride/agent-qa-core'], '>=0.1.0')
+  assert.deepEqual(sanitized['agent-qa'], pluginManifest)
   assert.equal('devDependencies' in sanitized, false)
   assert.throws(() => sanitizePackageManifest({ dependencies: { bad: 'workspace:*' } }, '0.1.1'), /unsafe local dependency range/)
   assert.throws(() => sanitizePackageManifest({ optionalDependencies: { bad: 'file:../bad' } }, '0.1.1'), /unsafe local dependency range/)
@@ -67,7 +72,21 @@ test('stages package files and validates required publish contents', async () =>
     assert.equal(record.pkg.main, './dist/index.js')
     assert.equal(record.pkg.types, './dist/index.d.ts')
     assert.equal(record.pkg.peerDependencies['@vostride/agent-qa-core'], '>=0.1.0')
+    assert.deepEqual(record.pkg['agent-qa'], pluginManifest)
     assert.equal(existsSync(join(stagedDir, 'NOTICE.md')), true)
+  } finally {
+    await rm(rootDir, { recursive: true, force: true })
+  }
+})
+
+test('a staged package without the agent-qa plugin manifest is refused', async () => {
+  const rootDir = await fixtureRoot({ 'agent-qa': undefined })
+  try {
+    const stagedDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+    assert.throws(
+      () => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }),
+      /staged package must declare the agent-qa model-auth plugin manifest/,
+    )
   } finally {
     await rm(rootDir, { recursive: true, force: true })
   }
