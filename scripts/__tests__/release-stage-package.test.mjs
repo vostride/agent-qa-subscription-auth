@@ -70,7 +70,6 @@ test('stages package files and validates required publish contents', async () =>
     assert.equal(record.pkg.version, '0.1.1')
     assert.equal(record.pkg.main, './dist/index.js')
     assert.equal(record.pkg.types, './dist/index.d.ts')
-    assert.equal('peerDependencies' in record.pkg, false)
     assert.equal(record.pkg.license, 'FSL-1.1-ALv2')
     assert.deepEqual(record.pkg['agent-qa'], pluginManifest)
     assert.equal(existsSync(join(stagedDir, 'NOTICE.md')), true)
@@ -244,15 +243,17 @@ test('staged JavaScript that only names agent-qa in a string is accepted', async
   }
 })
 
-test('the published manifest declares the FSL licence and no agent-qa package', () => {
+test('package.json declares the FSL licence, no peer range and no agent-qa package', () => {
   const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
   const pkg = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'))
-  const published = sanitizePackageManifest(pkg, pkg.version)
 
-  assert.equal(published.license, 'FSL-1.1-ALv2')
-  assert.equal('peerDependencies' in published, false)
-  const names = ['dependencies', 'optionalDependencies'].flatMap(block => Object.keys(published[block] ?? {}))
+  assert.equal(pkg.license, 'FSL-1.1-ALv2')
+  assert.equal('peerDependencies' in pkg, false)
+  const names = ['dependencies', 'peerDependencies', 'optionalDependencies'].flatMap(block =>
+    Object.keys(pkg[block] ?? {}),
+  )
   assert.deepEqual(names.filter(name => name === 'agent-qa' || name.startsWith('@vostride/agent-qa-')), [])
+  assert.equal(sanitizePackageManifest(pkg, pkg.version).license, 'FSL-1.1-ALv2')
 })
 
 test('parseStageArgs tolerates pnpm run -- separator', () => {
