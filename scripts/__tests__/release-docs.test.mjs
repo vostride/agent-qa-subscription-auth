@@ -10,16 +10,14 @@ function read(path) {
   return readFileSync(join(rootDir, path), 'utf8')
 }
 
-test('README documents install, plugin config, dashboard auth, and compatibility', () => {
+test('README installs through init, shows the plugins entry and signs in with auth login', () => {
   const readme = read('README.md')
 
   assert.match(readme, /@vostride\/agent-qa-subscription-auth/)
-  assert.match(readme, /"devDependencies"/)
-  assert.match(readme, /<agent-qa version>/)
-  assert.match(readme, /plugins\.auth/)
-  assert.match(readme, /agent-qa dashboard/)
-  assert.match(readme, /path:\s*"\.\.\/agent-qa-subscription-auth\/dist\/index\.js"/)
-  assert.match(readme, /@vostride\/agent-qa-core >=0\.1\.0/)
+  assert.match(readme, /npx agent-qa@latest init/)
+  assert.match(readme, /name: subscription/)
+  assert.match(readme, /package: "@vostride\/agent-qa-subscription-auth"/)
+  assert.match(readme, /npx agent-qa auth login --config/)
   assert.match(readme, /RELEASE\.md/)
 })
 

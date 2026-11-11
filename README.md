@@ -1,38 +1,40 @@
 # agent-qa-subscription-auth
 
-Subscription LLM auth providers for agent-qa.
+Sign-in for agent-qa's `openai-subscription` and `anthropic-subscription` providers, so a ChatGPT or Claude subscription can be the model instead of an API key.
 
-Install this package next to `agent-qa` when you want to use `openai-subscription` or `anthropic-subscription` providers. `agent-qa init` writes the dependency into `package.json` for subscription-auth configs; install it with the package manager your project already uses.
+## Install
 
-```json
-{
-  "devDependencies": {
-    "@vostride/agent-qa-subscription-auth": "<agent-qa version>"
-  }
-}
+Run init and pick a subscription model, `claude-code` or `codex`:
+
+```bash
+npx agent-qa@latest init
 ```
 
-Configure the `plugins.auth` array in `agent-qa.config.yaml`:
+init declares `agent-qa` and this package in `package.json` at the same exact version, installs both, and writes this entry to `agent-qa.config.yaml`:
 
 ```yaml
 plugins:
-  auth:
-    - package: "@vostride/agent-qa-subscription-auth"
+  - name: subscription
+    package: "@vostride/agent-qa-subscription-auth"
 ```
 
-Start `agent-qa dashboard` and authenticate subscription configs from the LLM configuration editor.
+In a project that is already set up, `npx agent-qa plugins add @vostride/agent-qa-subscription-auth` declares and installs this package at agent-qa's version and writes the same entry.
 
-For local two-repo development, build this package and point AgentQA at the local entry file:
+## Sign in
 
-```yaml
-plugins:
-  auth:
-    - path: "../agent-qa-subscription-auth/dist/index.js"
+```bash
+npx agent-qa auth login --config <name>
 ```
+
+`<name>` is the model's name in `agent-qa.config.yaml`: `claude-code` or `codex` when init wrote it.
 
 ## Compatibility
 
-This package is released at the same version as `agent-qa` and declares the peer dependency `@vostride/agent-qa-core >=0.1.0`. Keep the installed `agent-qa` and subscription-auth versions aligned.
+This package is released at agent-qa's version, and init pins both to the same exact version.
+
+## Local development
+
+Build this package with agent-qa checked out beside it, then declare it in the project's `package.json` with a `file:` spec that points at this folder. init leaves that entry as declared.
 
 ## Release
 
