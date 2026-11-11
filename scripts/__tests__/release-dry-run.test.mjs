@@ -37,6 +37,7 @@ test('builds a non-mutating patch release dry-run plan', () => {
   assert.equal(plan.npm.publishCommand.package, '@vostride/agent-qa-subscription-auth')
   assert.equal(plan.npm.publishCommand.command, 'npm publish --access public')
   assert.equal(plan.package, '@vostride/agent-qa-subscription-auth')
+  assert.equal(plan.compatibility.policy, 'released at the agent-qa version, no peer range')
 })
 
 test('parseDryRunArgs tolerates pnpm run -- separator', () => {

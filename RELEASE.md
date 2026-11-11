@@ -39,9 +39,9 @@ The `agent-qa` workflow uses `SUBSCRIPTION_AUTH_RELEASE_TOKEN` only to dispatch 
 
 ## Compatibility Policy
 
-The staged package keeps the peer dependency contract `@vostride/agent-qa-core >=0.1.0`. Keep new plugin releases compatible with the published `agent-qa` core API unless a future release deliberately raises that peer range.
+This package is released at agent-qa's version. The `vostride/agent-qa` release workflow dispatches this one with the exact version, and `npx agent-qa@latest init` pins `agent-qa` and this package to the same exact version in a project.
 
-The package source version is kept aligned with `agent-qa`. Compatibility is anchored by the peer dependency and the README install guidance.
+The package declares no peer range and no dependency on an agent-qa package, and its build imports none at run time. `pnpm run release:stage` refuses a staged package that does either.
 
 ## Recovery
 

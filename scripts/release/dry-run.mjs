@@ -32,7 +32,7 @@ export function buildReleaseDryRunPlan(options = {}) {
       },
     },
     compatibility: {
-      peerDependency: '@vostride/agent-qa-core >=0.1.0',
+      policy: 'released at the agent-qa version, no peer range',
     },
   }
 }
@@ -65,7 +65,7 @@ function renderText(plan) {
     'Mutates external state: no',
     `Publish command: ${plan.npm.publishCommand.command}`,
     `Publish cwd: ${plan.npm.publishCommand.cwd}`,
-    `Compatibility: ${plan.compatibility.peerDependency}`,
+    `Compatibility: ${plan.compatibility.policy}`,
     '',
   ].join('\n')
 }
