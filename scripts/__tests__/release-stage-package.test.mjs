@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
   parseStageArgs,
   sanitizePackageManifest,
@@ -29,10 +30,9 @@ async function fixtureRoot(overrides = {}) {
     types: './dist/index.d.ts',
     exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
     files: ['dist', 'LICENSE.md', 'NOTICE.md'],
-    peerDependencies: { '@vostride/agent-qa-core': '>=0.1.0' },
     devDependencies: { '@vostride/agent-qa-core': 'link:../agent-qa/packages/core' },
     publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
-    license: 'SEE LICENSE IN LICENSE.md',
+    license: 'FSL-1.1-ALv2',
     'agent-qa': pluginManifest,
     ...overrides,
   }
@@ -54,7 +54,7 @@ test('sanitizes publish manifest and rejects local dependency ranges', () => {
   assert.equal(sanitized.version, '0.1.1')
   assert.equal(sanitized.main, './dist/index.js')
   assert.equal(sanitized.types, './dist/index.d.ts')
-  assert.equal(sanitized.peerDependencies['@vostride/agent-qa-core'], '>=0.1.0')
+  assert.equal('peerDependencies' in sanitized, false)
   assert.deepEqual(sanitized['agent-qa'], pluginManifest)
   assert.equal('devDependencies' in sanitized, false)
   assert.throws(() => sanitizePackageManifest({ dependencies: { bad: 'workspace:*' } }, '0.1.1'), /unsafe local dependency range/)
@@ -71,7 +71,8 @@ test('stages package files and validates required publish contents', async () =>
     assert.equal(record.pkg.version, '0.1.1')
     assert.equal(record.pkg.main, './dist/index.js')
     assert.equal(record.pkg.types, './dist/index.d.ts')
-    assert.equal(record.pkg.peerDependencies['@vostride/agent-qa-core'], '>=0.1.0')
+    assert.equal('peerDependencies' in record.pkg, false)
+    assert.equal(record.pkg.license, 'FSL-1.1-ALv2')
     assert.deepEqual(record.pkg['agent-qa'], pluginManifest)
     assert.equal(existsSync(join(stagedDir, 'NOTICE.md')), true)
   } finally {
@@ -92,6 +93,34 @@ test('a staged package without the agent-qa plugin manifest is refused', async (
   }
 })
 
+test('a staged package that depends on an agent-qa package is refused', async () => {
+  const peerRoot = await fixtureRoot()
+  try {
+    const stagedDir = await stagePackage({ rootDir: peerRoot, targetVersion: '0.1.1', outDir: '.release/package' })
+    const stagedManifest = join(stagedDir, 'package.json')
+    const pkg = JSON.parse(await readFile(stagedManifest, 'utf8'))
+    pkg.peerDependencies = { '@vostride/agent-qa-core': '0.1.1' }
+    await writeFile(stagedManifest, JSON.stringify(pkg, null, 2))
+    assert.throws(
+      () => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }),
+      /staged package must not depend on an agent-qa package: peerDependencies\.@vostride\/agent-qa-core/,
+    )
+  } finally {
+    await rm(peerRoot, { recursive: true, force: true })
+  }
+
+  const dependencyRoot = await fixtureRoot({ dependencies: { 'agent-qa': '0.1.1' } })
+  try {
+    const stagedDir = await stagePackage({ rootDir: dependencyRoot, targetVersion: '0.1.1', outDir: '.release/package' })
+    assert.throws(
+      () => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }),
+      /staged package must not depend on an agent-qa package: dependencies\.agent-qa/,
+    )
+  } finally {
+    await rm(dependencyRoot, { recursive: true, force: true })
+  }
+})
+
 test('staged dist may name only source maps it ships', async () => {
   const rootDir = await fixtureRoot()
   try {
@@ -109,6 +138,41 @@ test('staged dist may name only source maps it ships', async () => {
   } finally {
     await rm(rootDir, { recursive: true, force: true })
   }
+})
+
+test('a staged build may import agent-qa types in its declaration but not an agent-qa package in its JavaScript', async () => {
+  const rootDir = await fixtureRoot()
+  try {
+    await writeFile(
+      join(rootDir, 'dist/index.d.ts'),
+      'import type { AuthProvider } from "@vostride/agent-qa-core"\nexport default function plugin(): AuthProvider[]\n',
+    )
+    const stagedDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+    validateStagedPackage({ stagedDir, targetVersion: '0.1.1' })
+
+    await writeFile(
+      join(rootDir, 'dist/index.js'),
+      'import { createAuthFetch, generatePKCE, generateState } from "@vostride/agent-qa-core"\nexport default function plugin() {}\n',
+    )
+    const importingDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+    assert.throws(
+      () => validateStagedPackage({ stagedDir: importingDir, targetVersion: '0.1.1' }),
+      /staged dist\/index\.js imports an agent-qa package/,
+    )
+  } finally {
+    await rm(rootDir, { recursive: true, force: true })
+  }
+})
+
+test('the published manifest declares the FSL licence and no agent-qa package', () => {
+  const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const pkg = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'))
+  const published = sanitizePackageManifest(pkg, pkg.version)
+
+  assert.equal(published.license, 'FSL-1.1-ALv2')
+  assert.equal('peerDependencies' in published, false)
+  const names = ['dependencies', 'optionalDependencies'].flatMap(block => Object.keys(published[block] ?? {}))
+  assert.deepEqual(names.filter(name => name === 'agent-qa' || name.startsWith('@vostride/agent-qa-')), [])
 })
 
 test('parseStageArgs tolerates pnpm run -- separator', () => {

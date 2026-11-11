@@ -7,7 +7,7 @@
   "keywords": [
     "agent-qa-plugin"
   ],
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "FSL-1.1-ALv2",
   "homepage": "https://github.com/vostride/agent-qa-subscription-auth#readme",
   "bugs": {
     "url": "https://github.com/vostride/agent-qa-subscription-auth/issues"
@@ -56,9 +56,6 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  },
-  "peerDependencies": {
-    "@vostride/agent-qa-core": ">=0.1.0"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "~0.18.5",

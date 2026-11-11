@@ -5,6 +5,7 @@ import { stripArgSeparator } from './version.mjs'
 
 const dependencyBlocks = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
 const copiedFiles = ['README.md', 'LICENSE.md', 'NOTICE.md']
+const agentQaImport = /(?:\bfrom\s*|\bimport\s*\(?\s*)["'](?:agent-qa|@vostride\/agent-qa-[^"'/]+)(?:\/[^"']*)?["']/
 
 function assertNoLocalRanges(pkg) {
   for (const blockName of dependencyBlocks) {
@@ -14,6 +15,28 @@ function assertNoLocalRanges(pkg) {
       if (typeof range === 'string' && /^(link:|file:|workspace:)/.test(range)) {
         throw new Error(`unsafe local dependency range in staged manifest: ${blockName}.${name}=${range}`)
       }
+    }
+  }
+}
+
+function assertNoAgentQaDependencies(pkg) {
+  for (const blockName of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+    const block = pkg[blockName]
+    if (!block || typeof block !== 'object') continue
+    for (const name of Object.keys(block)) {
+      if (name === 'agent-qa' || name.startsWith('@vostride/agent-qa-')) {
+        throw new Error(`staged package must not depend on an agent-qa package: ${blockName}.${name}`)
+      }
+    }
+  }
+}
+
+function assertNoAgentQaImports(stagedDir) {
+  const distDir = join(stagedDir, 'dist')
+  for (const entry of readdirSync(distDir, { recursive: true })) {
+    if (!/\.[cm]?js$/.test(entry)) continue
+    if (agentQaImport.test(readFileSync(join(distDir, entry), 'utf8'))) {
+      throw new Error(`staged dist/${entry} imports an agent-qa package`)
     }
   }
 }
@@ -44,7 +67,6 @@ export function sanitizePackageManifest(pkg, targetVersion) {
     'exports',
     'files',
     'publishConfig',
-    'peerDependencies',
     'license',
     'homepage',
     'bugs',
@@ -98,9 +120,7 @@ export function validateStagedPackage(options = {}) {
   if (pkg.publishConfig?.access !== 'public') throw new Error('staged package publishConfig.access must be public')
   if (pkg.main !== './dist/index.js') throw new Error('staged package main must be ./dist/index.js')
   if (pkg.types !== './dist/index.d.ts') throw new Error('staged package types must be ./dist/index.d.ts')
-  if (pkg.peerDependencies?.['@vostride/agent-qa-core'] !== '>=0.1.0') {
-    throw new Error('staged package must declare @vostride/agent-qa-core >=0.1.0 peer dependency')
-  }
+  assertNoAgentQaDependencies(pkg)
   const plugin = pkg['agent-qa']?.plugin
   if (plugin?.kind !== 'model-auth' || plugin.runs !== 'in-process' || plugin.entry !== './dist/index.js') {
     throw new Error('staged package must declare the agent-qa model-auth plugin manifest')
@@ -110,6 +130,7 @@ export function validateStagedPackage(options = {}) {
     if (!existsSync(join(stagedDir, file))) throw new Error(`staged package must include ${file}`)
   }
   assertNoDanglingSourceMaps(stagedDir)
+  assertNoAgentQaImports(stagedDir)
   return { dir: stagedDir, pkg }
 }
 
