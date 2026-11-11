@@ -1,9 +1,5 @@
-import {
-  generatePKCE,
-  type AuthProvider,
-  type OAuthTokens,
-  type TokenRefreshFn,
-} from '@vostride/agent-qa-core'
+import type { AuthProvider, OAuthTokens, TokenRefreshFn } from '@vostride/agent-qa-core'
+import { generatePKCE } from './pkce.js'
 
 export const ANTHROPIC_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 export const ANTHROPIC_TOKEN_URL = 'https://console.anthropic.com/v1/oauth/token'

@@ -1,12 +1,7 @@
 import { createServer, type Server } from 'node:http'
-import {
-  createAuthFetch,
-  generatePKCE,
-  generateState,
-  type AuthProvider,
-  type OAuthTokens,
-  type TokenRefreshFn,
-} from '@vostride/agent-qa-core'
+import type { AuthProvider, OAuthTokens, TokenRefreshFn } from '@vostride/agent-qa-core'
+import { createAuthFetch } from './fetch-wrapper.js'
+import { generatePKCE, generateState } from './pkce.js'
 
 export const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 export const CODEX_AUTH_BASE = 'https://auth.openai.com'
