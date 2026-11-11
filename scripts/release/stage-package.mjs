@@ -28,13 +28,13 @@ function assertNoLocalRanges(pkg) {
   }
 }
 
-function assertNoAgentQaDependencies(pkg) {
+function assertNoAgentQaDependencies(pkg, subject) {
   for (const blockName of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
     const block = pkg[blockName]
     if (!block || typeof block !== 'object') continue
     for (const name of Object.keys(block)) {
       if (name === 'agent-qa' || name.startsWith('@vostride/agent-qa-')) {
-        throw new Error(`staged package must not depend on an agent-qa package: ${blockName}.${name}`)
+        throw new Error(`${subject} must not depend on an agent-qa package: ${blockName}.${name}`)
       }
     }
   }
@@ -64,6 +64,7 @@ function assertNoDanglingSourceMaps(stagedDir) {
 }
 
 export function sanitizePackageManifest(pkg, targetVersion) {
+  assertNoAgentQaDependencies(pkg, 'package.json')
   const allowed = [
     'name',
     'version',
@@ -129,7 +130,7 @@ export function validateStagedPackage(options = {}) {
   if (pkg.publishConfig?.access !== 'public') throw new Error('staged package publishConfig.access must be public')
   if (pkg.main !== './dist/index.js') throw new Error('staged package main must be ./dist/index.js')
   if (pkg.types !== './dist/index.d.ts') throw new Error('staged package types must be ./dist/index.d.ts')
-  assertNoAgentQaDependencies(pkg)
+  assertNoAgentQaDependencies(pkg, 'staged package')
   const plugin = pkg['agent-qa']?.plugin
   if (plugin?.kind !== 'model-auth' || plugin.runs !== 'in-process' || plugin.entry !== './dist/index.js') {
     throw new Error('staged package must declare the agent-qa model-auth plugin manifest')

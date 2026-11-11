@@ -7,6 +7,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
   parseStageArgs,
+  runCli,
   sanitizePackageManifest,
   stagePackage,
   validateStagedPackage,
@@ -47,14 +48,12 @@ test('sanitizes publish manifest and rejects local dependency ranges', () => {
     main: './dist/index.js',
     types: './dist/index.d.ts',
     devDependencies: { '@vostride/agent-qa-core': 'link:../agent-qa/packages/core' },
-    peerDependencies: { '@vostride/agent-qa-core': '>=0.1.0' },
     'agent-qa': pluginManifest,
   }, '0.1.1')
 
   assert.equal(sanitized.version, '0.1.1')
   assert.equal(sanitized.main, './dist/index.js')
   assert.equal(sanitized.types, './dist/index.d.ts')
-  assert.equal('peerDependencies' in sanitized, false)
   assert.deepEqual(sanitized['agent-qa'], pluginManifest)
   assert.equal('devDependencies' in sanitized, false)
   assert.throws(() => sanitizePackageManifest({ dependencies: { bad: 'workspace:*' } }, '0.1.1'), /unsafe local dependency range/)
@@ -93,31 +92,47 @@ test('a staged package without the agent-qa plugin manifest is refused', async (
   }
 })
 
-test('a staged package that depends on an agent-qa package is refused', async () => {
-  const peerRoot = await fixtureRoot()
-  try {
-    const stagedDir = await stagePackage({ rootDir: peerRoot, targetVersion: '0.1.1', outDir: '.release/package' })
-    const stagedManifest = join(stagedDir, 'package.json')
-    const pkg = JSON.parse(await readFile(stagedManifest, 'utf8'))
-    pkg.peerDependencies = { '@vostride/agent-qa-core': '0.1.1' }
-    await writeFile(stagedManifest, JSON.stringify(pkg, null, 2))
-    assert.throws(
-      () => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }),
-      /staged package must not depend on an agent-qa package: peerDependencies\.@vostride\/agent-qa-core/,
-    )
-  } finally {
-    await rm(peerRoot, { recursive: true, force: true })
+test('staging refuses a source manifest that depends on an agent-qa package', async () => {
+  const declared = [
+    ['peerDependencies', '@vostride/agent-qa-core', '>=0.1.0'],
+    ['dependencies', 'agent-qa', '0.1.1'],
+    ['optionalDependencies', '@vostride/agent-qa-runner', '0.1.1'],
+  ]
+  for (const [blockName, name, range] of declared) {
+    const rootDir = await fixtureRoot({ [blockName]: { [name]: range } })
+    const refusal = { message: `package.json must not depend on an agent-qa package: ${blockName}.${name}` }
+    try {
+      await assert.rejects(stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' }), refusal)
+      await assert.rejects(
+        runCli(['--target-version', '0.1.1', '--out', '.release/package'], { rootDir, output: {} }),
+        refusal,
+      )
+      assert.equal(existsSync(join(rootDir, '.release')), false)
+    } finally {
+      await rm(rootDir, { recursive: true, force: true })
+    }
   }
+})
 
-  const dependencyRoot = await fixtureRoot({ dependencies: { 'agent-qa': '0.1.1' } })
-  try {
-    const stagedDir = await stagePackage({ rootDir: dependencyRoot, targetVersion: '0.1.1', outDir: '.release/package' })
-    assert.throws(
-      () => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }),
-      /staged package must not depend on an agent-qa package: dependencies\.agent-qa/,
-    )
-  } finally {
-    await rm(dependencyRoot, { recursive: true, force: true })
+test('a staged package that depends on an agent-qa package is refused', async () => {
+  const declared = [
+    ['peerDependencies', '@vostride/agent-qa-core'],
+    ['dependencies', 'agent-qa'],
+  ]
+  for (const [blockName, name] of declared) {
+    const rootDir = await fixtureRoot()
+    try {
+      const stagedDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+      const stagedManifest = join(stagedDir, 'package.json')
+      const pkg = JSON.parse(await readFile(stagedManifest, 'utf8'))
+      pkg[blockName] = { [name]: '0.1.1' }
+      await writeFile(stagedManifest, JSON.stringify(pkg, null, 2))
+      assert.throws(() => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }), {
+        message: `staged package must not depend on an agent-qa package: ${blockName}.${name}`,
+      })
+    } finally {
+      await rm(rootDir, { recursive: true, force: true })
+    }
   }
 })
 
