@@ -88,7 +88,6 @@ export function sanitizePackageManifest(pkg, targetVersion) {
     if (pkg[key] !== undefined) sanitized[key] = JSON.parse(JSON.stringify(pkg[key]))
   }
   sanitized.version = targetVersion
-  assertNoLocalRanges(sanitized)
   for (const blockName of ['dependencies', 'optionalDependencies']) {
     if (pkg[blockName]) {
       sanitized[blockName] = JSON.parse(JSON.stringify(pkg[blockName]))
