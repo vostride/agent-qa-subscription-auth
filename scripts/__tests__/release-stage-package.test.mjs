@@ -164,6 +164,71 @@ test('a staged build may import agent-qa types in its declaration but not an age
   }
 })
 
+test('a staged .cjs file that requires an agent-qa package is refused', async () => {
+  const sources = [
+    'const core = require("@vostride/agent-qa-core")\n',
+    "const cli = __require('agent-qa')\n",
+    'module.exports = require.resolve("@vostride/agent-qa-core/package.json")\n',
+  ]
+  for (const source of sources) {
+    const rootDir = await fixtureRoot()
+    try {
+      await writeFile(join(rootDir, 'dist/interop.cjs'), source)
+      const stagedDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+      assert.throws(
+        () => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }),
+        /staged dist\/interop\.cjs imports an agent-qa package/,
+        source,
+      )
+    } finally {
+      await rm(rootDir, { recursive: true, force: true })
+    }
+  }
+})
+
+test('a staged build that loads an agent-qa package by a dynamic import is refused', async () => {
+  const sources = [
+    'export default () => import("@vostride/agent-qa-core")\n',
+    'export default () => import(`@vostride/agent-qa-core/auth`)\n',
+    'export default () => import(/* @vite-ignore */ "@vostride/agent-qa-core")\n',
+    'export default () => import.meta.resolve("@vostride/agent-qa-core")\n',
+  ]
+  for (const source of sources) {
+    const rootDir = await fixtureRoot()
+    try {
+      await writeFile(join(rootDir, 'dist/index.js'), source)
+      const stagedDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+      assert.throws(
+        () => validateStagedPackage({ stagedDir, targetVersion: '0.1.1' }),
+        /staged dist\/index\.js imports an agent-qa package/,
+        source,
+      )
+    } finally {
+      await rm(rootDir, { recursive: true, force: true })
+    }
+  }
+})
+
+test('staged JavaScript that only names agent-qa in a string is accepted', async () => {
+  const rootDir = await fixtureRoot()
+  try {
+    await writeFile(
+      join(rootDir, 'dist/index.js'),
+      [
+        'import { createServer } from "node:http"',
+        `export const hint = "copy it from 'agent-qa' docs"`,
+        `export const install = 'Add "@vostride/agent-qa-core" with npx agent-qa plugins add, then import "agent-qa" settings'`,
+        'export default function plugin() {}',
+        '',
+      ].join('\n'),
+    )
+    const stagedDir = await stagePackage({ rootDir, targetVersion: '0.1.1', outDir: '.release/package' })
+    validateStagedPackage({ stagedDir, targetVersion: '0.1.1' })
+  } finally {
+    await rm(rootDir, { recursive: true, force: true })
+  }
+})
+
 test('the published manifest declares the FSL licence and no agent-qa package', () => {
   const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
   const pkg = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'))

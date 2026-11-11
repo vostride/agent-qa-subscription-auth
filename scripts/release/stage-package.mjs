@@ -5,7 +5,16 @@ import { stripArgSeparator } from './version.mjs'
 
 const dependencyBlocks = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
 const copiedFiles = ['README.md', 'LICENSE.md', 'NOTICE.md']
-const agentQaImport = /(?:\bfrom\s*|\bimport\s*\(?\s*)["'](?:agent-qa|@vostride\/agent-qa-[^"'/]+)(?:\/[^"']*)?["']/
+const agentQaSpecifier = /["'`](?:agent-qa|@vostride\/agent-qa-[^"'`/]+)(?:\/[^"'`]*)?["'`]/
+const agentQaLoaders = [
+  /\b(?:import|export)\b[\w$\s{},*]*?\bfrom\s*/,
+  /(?:^|[;}]|\*\/)\s*import\s*/,
+  /(?:\bimport|require|\bimport\.meta\.resolve|require\.resolve)\s*\(\s*(?:\/\*[\s\S]*?\*\/\s*)*/,
+]
+const agentQaImport = new RegExp(
+  `(?:${agentQaLoaders.map(loader => loader.source).join('|')})${agentQaSpecifier.source}`,
+  'm',
+)
 
 function assertNoLocalRanges(pkg) {
   for (const blockName of dependencyBlocks) {
