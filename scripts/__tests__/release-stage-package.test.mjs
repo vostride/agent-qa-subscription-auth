@@ -243,7 +243,7 @@ test('staged JavaScript that only names agent-qa in a string is accepted', async
   }
 })
 
-test('package.json declares the FSL licence, no peer range and no agent-qa package', () => {
+test('the published manifest declares the FSL licence and no agent-qa package', () => {
   const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
   const pkg = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'))
 
